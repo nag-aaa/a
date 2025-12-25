@@ -1,5 +1,5 @@
 -- [[ 最終完成版：左側高め配置・対話チャット ]]
-local BRAIN_URL = "Https://script.google.com/macros/s/AKfycbwFgZpdIaTTKyZPQYhFEu1mIl_aeauQlCLjwAWerM--hqh7pKXjZDCXGaI-s_elJ9WInw/exec" 
+local BRAIN_URL = "Https://script.google.com/macros/s/AKfycbzfH6aK-YDrexmxQWqIZLDgLYhrID4oGCDspq70s-OCf2AUdbSRkx9IG1w6s6vrYCZR_w/exec" 
 local Player = game.Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
 
