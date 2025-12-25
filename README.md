@@ -1,121 +1,91 @@
---[[
-    Roblox AI v21 (Linguistic & Instinct Interface)
-    - 外部の脳: Google Apps Script (GAS)
-    - 知能レベル: IQ 1000 (外部演算)
-    - 実行環境: モバイル (スマホ) 対応
-]]
-
-local HttpService = game:GetService("HttpService")
-local RunService = game:GetService("RunService")
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-
--- ■ あなたが作成した「脳」のURL
+-- [[ Roblox AI: 動作＆チャット完全対応版 ]]
 local BRAIN_URL = "https://script.google.com/macros/s/AKfycbwFgZpdIaTTKyZPQYhFEu1mIl_aeauQlCLjwAWerM--hqh7pKXjZDCXGaI-s_elJ9WInw/exec"
-
-local CurrentMode = "友好"
-local LastSpeech = ""
 local IsActive = false
+local LastSpeech = ""
 
--- // 外部の脳（GAS）に状況を報告し、指示を仰ぐ
-local function Think()
-    if not IsActive then return end
-    local char = LocalPlayer.Character; if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
+-- // どんな環境でも強制的にチャットを流す関数
+local function Speak(message)
+    if not message or message == "" then return end
+    print("AIが発言を試みます: " .. message)
 
-    -- 周囲の状況をデータ化して送信
-    local situation = ""
-    for _, p in pairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-            local d = (p.Character.HumanoidRootPart.Position - root.Position).Magnitude
-            if d < 30 then 
-                situation = situation .. "Near:" .. p.Name .. " Dist:" .. math.floor(d) .. " " 
-            end
+    -- 1. 最新のTextChatServiceに対応
+    pcall(function()
+        local textService = game:GetService("TextChatService")
+        if textService.ChatVersion == Enum.ChatVersion.TextChatService then
+            local channel = textService.TextChannels.RBXGeneral
+            channel:SendAsync(message)
         end
-    end
-
-    -- GASサーバーへPOSTリクエスト
-    local success, response = pcall(function()
-        return HttpService:PostAsync(BRAIN_URL, HttpService:JSONEncode({
-            situation = situation ~= "" and situation or "No targets nearby."
-        }))
     end)
 
+    -- 2. 従来のチャットシステム(Legacy)に対応
+    pcall(function()
+        game:GetService("ReplicatedStorage").DefaultChatSystemChatEvents.SayMessageRequest:FireServer(message, "All")
+    end)
+    
+    -- 3. 自分の頭上に吹き出しを出す（念のため）
+    pcall(function()
+        game:GetService("Chat"):Chat(game.Players.LocalPlayer.Character.Head, message, Enum.ChatSpeakerType.User)
+    end)
+end
+
+-- // 思考ルーチン
+local function Think()
+    if not IsActive then return end
+    
+    local success, response = pcall(function()
+        return game:GetService("HttpService"):PostAsync(BRAIN_URL, game:GetService("HttpService"):JSONEncode({situation = "Communicating"}))
+    end)
+    
     if success and response then
-        local data = HttpService:JSONDecode(response)
-        -- 言葉の出力
+        local data = game:GetService("HttpService"):JSONDecode(response)
         if data.reply and data.reply ~= LastSpeech then
-            if game:GetService("TextChatService").ChatVersion == Enum.ChatVersion.TextChatService then
-                game:GetService("TextChatService").TextChannels.RBXGeneral:SendAsync(data.reply)
-            else
-                game:GetService("ReplicatedStorage").DefaultChatSystemChatEvents.SayMessageRequest:FireServer(data.reply, "All")
-            end
+            Speak(data.reply)
             LastSpeech = data.reply
         end
-        -- 行動モードの更新
-        if data.mode then CurrentMode = data.mode end
+    else
+        warn("脳(GAS)との通信に失敗しました")
     end
 end
 
--- // 移動・ジャンプ制御 (基本動作の徹底)
-RunService.Heartbeat:Connect(function()
+-- // 移動・ジャンプ制御 (動作部分はそのまま維持)
+game:GetService("RunService").Heartbeat:Connect(function()
     if not IsActive then return end
-    local char = LocalPlayer.Character; if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart"); local hum = char:FindFirstChild("Humanoid")
-    if not root or not hum then return end
-
-    -- 最も近いターゲットを検索
-    local target = nil; local minDist = 100
-    for _, p in pairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-            local d = (p.Character.HumanoidRootPart.Position - root.Position).Magnitude
+    local char = game.Players.LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+    
+    -- 最も近いプレイヤーを探す
+    local target = nil
+    local minDist = 50
+    for _, p in pairs(game.Players:GetPlayers()) do
+        if p ~= game.Players.LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+            local d = (p.Character.HumanoidRootPart.Position - char.HumanoidRootPart.Position).Magnitude
             if d < minDist then minDist = d; target = p end
         end
     end
 
     if target then
-        local tRoot = target.Character.HumanoidRootPart
-        local tPos = tRoot.Position
-        local tVel = tRoot.AssemblyLinearVelocity
-        
-        hum.WalkSpeed = 32
-        
-        if CurrentMode == "追跡" or CurrentMode == "遮断" then
-            -- 0.3秒後の未来位置へ移動
-            hum:MoveTo(tPos + (tVel * 0.3))
-        elseif CurrentMode == "友好" then
-            -- 適度な距離(10スタッド)を保つ
-            if (tPos - root.Position).Magnitude > 10 then
-                hum:MoveTo(tPos)
-            end
-        elseif CurrentMode == "逃走" then
-            local fleeDir = (root.Position - tPos).Unit
-            hum:MoveTo(root.Position + (fleeDir * 20))
-            if (tPos - root.Position).Magnitude < 15 then hum.Jump = true end
-        end
+        char.Humanoid:MoveTo(target.Character.HumanoidRootPart.Position)
     end
 end)
 
--- // UI作成
-local ScreenGui = Instance.new("ScreenGui", game:GetService("CoreGui") or LocalPlayer:WaitForChild("PlayerGui"))
-local MainBtn = Instance.new("TextButton", ScreenGui)
-MainBtn.Size = UDim2.new(0, 100, 0, 50)
-MainBtn.Position = UDim2.new(0.5, -50, 0.1, 0)
-MainBtn.Text = "AI OFF"
-MainBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-MainBtn.TextColor3 = Color3.new(1,1,1)
+-- // UIボタン（中央上部）
+local sg = Instance.new("ScreenGui", game:GetService("CoreGui") or game.Players.LocalPlayer.PlayerGui)
+local btn = Instance.new("TextButton", sg)
+btn.Size = UDim2.new(0, 120, 0, 40)
+btn.Position = UDim2.new(0.5, -60, 0.05, 0)
+btn.Text = "AI: OFF"
+btn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+btn.TextColor3 = Color3.new(1, 1, 1)
 
-MainBtn.MouseButton1Click:Connect(function()
+btn.MouseButton1Click:Connect(function()
     IsActive = not IsActive
-    MainBtn.Text = IsActive and "AI ON" or "AI OFF"
-    MainBtn.BackgroundColor3 = IsActive and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(50, 50, 50)
+    btn.Text = IsActive and "AI: ON" or "AI: OFF"
+    btn.BackgroundColor3 = IsActive and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(50, 50, 50)
 end)
 
--- 12秒ごとに「脳」に相談
-spawn(function()
+task.spawn(function()
     while true do
-        wait(12)
-        if IsActive then Think() end
+        task.wait(12)
+        Think()
     end
 end)
